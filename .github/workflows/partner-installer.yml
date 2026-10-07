@@ -2,31 +2,30 @@ name: ALVIN Partner Installer
 
 on:
   workflow_dispatch:
+    inputs:
+      partner_id:
+        description: 'Partner ID, e.g. AP-1001'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
-  check-builder:
+  build-partner-installer:
     runs-on: windows-2022
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
-      - name: Verify compiler and published ALVIN installer
+      - name: Build partner installer
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
-
+          PARTNER_ID: ${{ inputs.partner_id }}
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-
-          if (!(Test-Path $compiler)) {
-            throw 'Windows C# compiler is unavailable.'
-          }
-
-          Write-Host 'Windows compiler: ready'
+          $safePartnerId = $env:PARTNER_ID -replace '[^A-Za-z0-9._-]', '-'
 
           $headers = @{
             Accept = 'application/vnd.github+json'
@@ -45,9 +44,75 @@ jobs:
           )
 
           if ($installers.Count -ne 1) {
-            throw 'Expected exactly one ALVIN Browser Setup executable in the latest published release.'
+            throw 'Expected exactly one ALVIN Browser installer.'
           }
 
-          Write-Host "Latest published release: $($release.tag_name)"
-          Write-Host "Shared installer: $($installers[0].name)"
-          Write-Host 'Builder prerequisites passed.'
+          $downloadUrl = $installers[0].browser_download_url
+          $outputExe = "ALVIN-Partner-$safePartnerId.exe"
+
+          $source = @"
+          using System;
+          using System.Diagnostics;
+          using System.IO;
+          using System.Net;
+
+          class Program
+          {
+              [STAThread]
+              static void Main()
+              {
+                  string partnerId = "$safePartnerId";
+                  string url = "$downloadUrl";
+
+                  string tempInstaller = Path.Combine(
+                      Path.GetTempPath(),
+                      "ALVIN-Browser-Setup.exe"
+                  );
+
+                  string partnerFile = Path.Combine(
+                      Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                      "ALVIN",
+                      "partner.txt"
+                  );
+
+                  Directory.CreateDirectory(Path.GetDirectoryName(partnerFile));
+                  File.WriteAllText(partnerFile, partnerId);
+
+                  using (WebClient client = new WebClient())
+                  {
+                      client.DownloadFile(url, tempInstaller);
+                  }
+
+                  Process.Start(new ProcessStartInfo
+                  {
+                      FileName = tempInstaller,
+                      UseShellExecute = true
+                  });
+              }
+          }
+          "@
+
+          Set-Content -Path partner-installer.cs -Value $source -Encoding UTF8
+
+          $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+
+          & $compiler `
+            /nologo `
+            /target:winexe `
+            /out:$outputExe `
+            partner-installer.cs
+
+          if (!(Test-Path $outputExe)) {
+            throw 'Partner installer was not created.'
+          }
+
+          Write-Host "Built: $outputExe"
+          Write-Host "Partner: $safePartnerId"
+          Write-Host "ALVIN source release: $($release.tag_name)"
+
+      - name: Upload partner installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALVIN-Partner-${{ inputs.partner_id }}
+          path: ALVIN-Partner-*.exe
+          if-no-files-found: error
