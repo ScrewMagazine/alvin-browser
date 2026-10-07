@@ -55,39 +55,53 @@ jobs:
           using System.Diagnostics;
           using System.IO;
           using System.Net;
+          using System.Windows.Forms;
 
           class Program
           {
               [STAThread]
               static void Main()
               {
-                  string partnerId = "$safePartnerId";
-                  string url = "$downloadUrl";
-
-                  string tempInstaller = Path.Combine(
-                      Path.GetTempPath(),
-                      "ALVIN-Browser-Setup.exe"
-                  );
-
-                  string partnerFile = Path.Combine(
-                      Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                      "ALVIN",
-                      "partner.txt"
-                  );
-
-                  Directory.CreateDirectory(Path.GetDirectoryName(partnerFile));
-                  File.WriteAllText(partnerFile, partnerId);
-
-                  using (WebClient client = new WebClient())
+                  try
                   {
-                      client.DownloadFile(url, tempInstaller);
+                      string partnerId = "$safePartnerId";
+                      string url = "$downloadUrl";
+
+                      string tempInstaller = Path.Combine(
+                          Path.GetTempPath(),
+                          "ALVIN-Browser-Setup.exe"
+                      );
+
+                      string partnerFile = Path.Combine(
+                          Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                          "ALVIN",
+                          "partner.txt"
+                      );
+
+                      Directory.CreateDirectory(Path.GetDirectoryName(partnerFile));
+                      File.WriteAllText(partnerFile, partnerId);
+
+                      ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+
+                      using (WebClient client = new WebClient())
+                      {
+                          client.Headers.Add("User-Agent", "ALVIN-Partner-Installer");
+                          client.DownloadFile(url, tempInstaller);
+                      }
+
+                      Process.Start(new ProcessStartInfo
+                      {
+                          FileName = tempInstaller,
+                          UseShellExecute = true
+                      });
                   }
-
-                  Process.Start(new ProcessStartInfo
+                  catch (Exception ex)
                   {
-                      FileName = tempInstaller,
-                      UseShellExecute = true
-                  });
+                      MessageBox.Show(
+                          ex.Message,
+                          "ALVIN Partner Installer Error"
+                      );
+                  }
               }
           }
           "@
@@ -99,6 +113,7 @@ jobs:
           & $compiler `
             /nologo `
             /target:winexe `
+            /reference:System.Windows.Forms.dll `
             /out:$outputExe `
             partner-installer.cs
 
