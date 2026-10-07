@@ -1,1 +1,53 @@
+name: ALVIN Partner Installer
 
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-builder:
+    runs-on: windows-2022
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify compiler and published ALVIN installer
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+
+          if (!(Test-Path $compiler)) {
+            throw 'Windows C# compiler is unavailable.'
+          }
+
+          Write-Host 'Windows compiler: ready'
+
+          $headers = @{
+            Accept = 'application/vnd.github+json'
+            Authorization = "Bearer $env:GH_TOKEN"
+            'User-Agent' = 'ALVIN-Partner-Builder'
+          }
+
+          $release = Invoke-RestMethod `
+            -Uri 'https://api.github.com/repos/ScrewMagazine/alvin-browser/releases/latest' `
+            -Headers $headers
+
+          $installers = @(
+            $release.assets | Where-Object {
+              $_.name -match '^ALVIN Browser Setup .+\.exe$'
+            }
+          )
+
+          if ($installers.Count -ne 1) {
+            throw 'Expected exactly one ALVIN Browser Setup executable in the latest published release.'
+          }
+
+          Write-Host "Latest published release: $($release.tag_name)"
+          Write-Host "Shared installer: $($installers[0].name)"
+          Write-Host 'Builder prerequisites passed.'
