@@ -40,7 +40,7 @@ jobs:
 
           $installers = @(
             $release.assets | Where-Object {
-              $_.name -match '^ALVIN Browser Setup .+\.exe$'
+              $_.name -match '^ALVIN-Browser-Setup-.+\.exe$'
             }
           )
 
