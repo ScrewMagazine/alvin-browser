@@ -162,3 +162,35 @@ jobs:
           name: ALVIN-Partner-${{ inputs.partner_id }}
           path: ALVIN-Partner-*.exe
           if-no-files-found: error
+      
+      - name: Deliver installer to ALVIN server
+        shell: powershell
+        env:
+          BUILDER_UPLOAD_SECRET: ${{ secrets.ALVIN_BUILDER_UPLOAD_SECRET }}
+          PARTNER_ID: ${{ inputs.partner_id }}
+
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $safePartnerId = $env:PARTNER_ID -replace '[^A-Za-z0-9._-]', '-'
+          $installer = "ALVIN-Partner-$safePartnerId.exe"
+
+          if (!(Test-Path $installer)) {
+            throw "Partner installer not found: $installer"
+          }
+
+          & curl.exe `
+            --fail-with-body `
+            --silent `
+            --show-error `
+            -X POST `
+            -H "X-ALVIN-Builder-Secret: $env:BUILDER_UPLOAD_SECRET" `
+            -F "partner_id=$env:PARTNER_ID" `
+            -F "installer=@$installer;type=application/octet-stream" `
+            "https://screwnetwork.com/partners/builder-upload.php"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Installer delivery to ALVIN server failed.'
+          }
+
+          Write-Host 'Installer delivered to ALVIN server.'
